@@ -1,0 +1,158 @@
+HTTP SERVER DOCUMENTATION
+=========================
+
+Project: Multi-threaded HTTP Server
+Language: Python 3
+Protocol: HTTP/1.1
+
+OVERVIEW
+--------
+This HTTP server is a complete implementation of a web server built from scratch using
+socket programming. It demonstrates advanced networking concepts, concurrent programming,
+and security best practices.
+
+ARCHITECTURE
+------------
+
+1. Socket Layer
+   - TCP sockets for reliable communication
+   - Proper socket lifecycle management
+   - Listen queue size: 50 connections
+   - Configurable host and port binding
+
+2. Thread Pool
+   - Fixed-size thread pool (default: 10 threads)
+   - Connection queue for overflow handling
+   - Thread synchronization using locks
+   - Active thread monitoring and logging
+
+3. Request Processing
+   - HTTP request parser with header extraction
+   - Support for GET and POST methods
+   - Request size limit: 8192 bytes
+   - Content-Type validation
+
+4. Response Generation
+   - RFC 7231 compliant HTTP responses
+   - Proper status codes and headers
+   - Binary file transfer support
+   - JSON response formatting
+
+SUPPORTED METHODS
+-----------------
+
+GET:
+  - Serve HTML files (text/html; charset=utf-8)
+  - Binary file download (application/octet-stream)
+  - Supported file types: .html, .txt, .png, .jpg, .jpeg
+  - Default route: / -> /index.html
+
+POST:
+  - JSON data upload
+  - Content-Type: application/json required
+  - File storage in resources/uploads/
+  - Automatic filename generation with timestamp
+
+SECURITY FEATURES
+-----------------
+
+1. Path Traversal Protection
+   - Canonical path validation
+   - Blocks: .., ./, //, absolute paths
+   - Returns 403 Forbidden for violations
+
+2. Host Header Validation
+   - Verifies Host header matches server address
+   - Returns 400 for missing Host header
+   - Returns 403 for Host header mismatch
+
+3. Input Validation
+   - JSON parsing with error handling
+   - File type verification
+   - Request size limits
+
+CONNECTION MANAGEMENT
+---------------------
+
+Keep-Alive Support:
+  - Timeout: 30 seconds
+  - Max requests per connection: 100
+  - HTTP/1.1 default: keep-alive
+  - HTTP/1.0 default: close
+
+Connection Headers:
+  - Keep-Alive: timeout=30, max=100
+  - Connection: keep-alive | close
+  - Proper socket cleanup on timeout
+
+STATUS CODES
+------------
+
+200 OK - Successful GET request
+201 Created - Successful POST request
+400 Bad Request - Malformed request or missing Host header
+403 Forbidden - Security violation
+404 Not Found - Resource not found
+405 Method Not Allowed - Unsupported HTTP method
+415 Unsupported Media Type - Invalid Content-Type or file type
+500 Internal Server Error - Server-side error
+503 Service Unavailable - Thread pool exhausted
+
+LOGGING
+-------
+
+All operations are logged with timestamps:
+- Server startup configuration
+- Connection establishment
+- Request details (method, path, version)
+- Host header validation
+- Binary file transfers with size
+- Response status codes
+- Connection management (keep-alive/close)
+- Security violations
+- Thread pool status
+
+PERFORMANCE
+-----------
+
+Concurrent Connections: 10 (configurable)
+Queue Size: 50 connections
+Request Limit: 100 per connection
+Timeout: 30 seconds for idle connections
+Buffer Size: 8192 bytes
+
+TESTING
+-------
+
+Basic Tests:
+  ✓ GET / -> index.html
+  ✓ GET /about.html
+  ✓ GET /logo.png (binary download)
+  ✓ POST /upload (JSON)
+
+Security Tests:
+  ✗ GET /../etc/passwd -> 403
+  ✗ Wrong Host header -> 403
+  ✗ Missing Host header -> 400
+
+Concurrency Tests:
+  ✓ Multiple simultaneous downloads
+  ✓ Thread pool saturation handling
+  ✓ Connection queuing
+
+USAGE
+-----
+
+Start server with defaults:
+  python server.py
+
+Custom configuration:
+  python server.py [port] [host] [max_threads]
+
+Examples:
+  python server.py 8000
+  python server.py 8000 0.0.0.0
+  python server.py 8000 0.0.0.0 20
+
+End of documentation.
+

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contact - Multi-threaded HTTP Server</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #667eea;
+        }
+        
+        h1 {
+            color: #667eea;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        nav {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 30px;
+        }
+        
+        nav ul {
+            list-style: none;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+        
+        nav a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+            padding: 8px 16px;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+        }
+        
+        nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .content {
+            margin-bottom: 30px;
+        }
+        
+        .content h2 {
+            color: #764ba2;
+            margin-bottom: 15px;
+            margin-top: 25px;
+        }
+        
+        .info-card {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #667eea;
+        }
+        
+        .info-card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+        
+        .info-card p {
+            margin-bottom: 10px;
+        }
+        
+        .api-example {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            overflow-x: auto;
+        }
+        
+        .api-example pre {
+            margin: 0;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        
+        .command-box {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #ffc107;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+        }
+        
+        footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #e9ecef;
+            text-align: center;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📞 Contact & Testing</h1>
+        </header>
+        
+        <nav>
+            <ul>
+                <li><a href="/">Home</a></li>
+                <li><a href="/about.html">About</a></li>
+                <li><a href="/contact.html">Contact</a></li>
+            </ul>
+        </nav>
+        
+        <div class="content">
+            <h2>Server Information</h2>
+            <div class="info-card">
+                <h3>Server Configuration</h3>
+                <p><strong>Default Host:</strong> 127.0.0.1 (localhost)</p>
+                <p><strong>Default Port:</strong> 8080</p>
+                <p><strong>Thread Pool Size:</strong> 10 threads</p>
+                <p><strong>Connection Queue:</strong> 50 pending connections</p>
+                <p><strong>Keep-Alive Timeout:</strong> 30 seconds</p>
+            </div>
+            
+            <h2>How to Start the Server</h2>
+            <p>You can start the server with default settings or customize it with command-line arguments:</p>
+            
+            <div class="command-box">
+                # Default configuration (localhost:8080, 10 threads)<br>
+                python server.py
+            </div>
+            
+            <div class="command-box">
+                # Custom port<br>
+                python server.py 8000
+            </div>
+            
+            <div class="command-box">
+                # Custom port and host<br>
+                python server.py 8000 0.0.0.0
+            </div>
+            
+            <div class="command-box">
+                # Custom port, host, and thread pool size<br>
+                python server.py 8000 0.0.0.0 20
+            </div>
+            
+            <h2>Testing the Server</h2>
+            
+            <div class="info-card">
+                <h3>Testing GET Requests</h3>
+                <p>Open your browser and navigate to:</p>
+                <ul>
+                    <li>http://localhost:8080/ - Home page</li>
+                    <li>http://localhost:8080/about.html - About page</li>
+                    <li>http://localhost:8080/logo.png - Download image</li>
+                    <li>http://localhost:8080/sample.txt - Download text file</li>
+                </ul>
+            </div>
+            
+            <div class="info-card">
+                <h3>Testing POST Requests (JSON Upload)</h3>
+                <p>Use curl or any HTTP client to send JSON data:</p>
+            </div>
+            
+            <div class="api-example">
+                <pre>curl -X POST http://localhost:8080/upload \
+  -H "Content-Type: application/json" \
+  -H "Host: localhost:8080" \
+  -d '{
+    "name": "Test Data",
+    "timestamp": "2024-03-15T10:30:00",
+    "values": [1, 2, 3, 4, 5]
+  }'</pre>
+            </div>
+            
+            <p>Expected response:</p>
+            <div class="api-example">
+                <pre>{
+  "status": "success",
+  "message": "File created successfully",
+  "filepath": "/uploads/upload_20240315_103000_a7b9.json"
+}</pre>
+            </div>
+            
+            <h2>Testing Security Features</h2>
+            
+            <div class="info-card">
+                <h3>Path Traversal Protection</h3>
+                <p>Try these requests - they should all return 403 Forbidden:</p>
+                <div class="command-box">
+                    curl http://localhost:8080/../etc/passwd<br>
+                    curl http://localhost:8080/../../sensitive.txt<br>
+                    curl http://localhost:8080//etc/hosts
+                </div>
+            </div>
+            
+            <div class="info-card">
+                <h3>Host Header Validation</h3>
+                <p>Request without Host header (should return 400):</p>
+                <div class="command-box">
+                    curl -H "Host:" http://localhost:8080/
+                </div>
+                <p>Request with wrong Host header (should return 403):</p>
+                <div class="command-box">
+                    curl -H "Host: evil.com" http://localhost:8080/
+                </div>
+            </div>
+            
+            <h2>Monitoring</h2>
+            <p>
+                The server provides comprehensive logging to the console. Watch the terminal output 
+                to see connection details, request processing, thread pool status, and any security violations.
+            </p>
+        </div>
+        
+        <footer>
+            <p>Multi-threaded HTTP Server | Socket Programming Assignment</p>
+            <p>Built with Python 3 • Supports GET and POST methods</p>
+        </footer>
+    </div>
+</body>
+</html>
+

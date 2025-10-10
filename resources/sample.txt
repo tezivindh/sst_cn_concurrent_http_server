@@ -1,0 +1,67 @@
+Multi-threaded HTTP Server - Sample Text File
+===============================================
+
+This is a sample text file for testing binary file downloads from the HTTP server.
+
+Features Demonstrated:
+- Binary file transfer using application/octet-stream
+- Content-Disposition header for file download
+- Proper Content-Length calculation
+- Keep-alive connection support
+
+Technical Details:
+------------------
+When this file is requested via GET, the server:
+1. Opens the file in binary mode
+2. Reads the entire content into memory
+3. Sets Content-Type to application/octet-stream
+4. Adds Content-Disposition header with the filename
+5. Calculates and sets the Content-Length header
+6. Sends the complete file as binary data
+
+Testing Instructions:
+---------------------
+To test this file download:
+
+Using curl:
+  curl -O http://localhost:8080/sample.txt
+
+Using wget:
+  wget http://localhost:8080/sample.txt
+
+Using Python:
+  import requests
+  response = requests.get('http://localhost:8080/sample.txt')
+  with open('downloaded_sample.txt', 'wb') as f:
+      f.write(response.content)
+
+Using your browser:
+  Navigate to http://localhost:8080/sample.txt
+  The browser should prompt you to download the file
+
+File Integrity:
+---------------
+After downloading, you can verify the file integrity by comparing:
+- File size (should match Content-Length header)
+- MD5 checksum (both files should have identical hash)
+- Content comparison (byte-by-byte verification)
+
+Security Considerations:
+------------------------
+The server implements path traversal protection to prevent unauthorized access.
+Attempts to access files outside the resources directory will be blocked.
+
+Examples of blocked requests:
+- /../etc/passwd
+- /../../sensitive.txt
+- //etc/hosts
+
+Connection Management:
+----------------------
+This request supports both persistent and non-persistent connections:
+- HTTP/1.1 with Connection: keep-alive (default)
+- HTTP/1.1 with Connection: close
+- HTTP/1.0 (closes connection by default)
+
+Enjoy testing the multi-threaded HTTP server!
+

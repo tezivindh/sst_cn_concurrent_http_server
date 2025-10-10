@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multi-threaded HTTP Server - Home</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        line-height: 1.6;
+        color: #333;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 900px;
+        margin: 0 auto;
+        background: white;
+        padding: 40px;
+        border-radius: 10px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+      }
+
+      header {
+        text-align: center;
+        margin-bottom: 40px;
+        padding-bottom: 20px;
+        border-bottom: 3px solid #667eea;
+      }
+
+      h1 {
+        color: #667eea;
+        font-size: 2.5em;
+        margin-bottom: 10px;
+      }
+
+      .subtitle {
+        color: #666;
+        font-size: 1.1em;
+      }
+
+      nav {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 30px;
+      }
+
+      nav ul {
+        list-style: none;
+        display: flex;
+        justify-content: center;
+        gap: 20px;
+      }
+
+      nav a {
+        color: #667eea;
+        text-decoration: none;
+        font-weight: 600;
+        padding: 8px 16px;
+        border-radius: 4px;
+        transition: all 0.3s ease;
+      }
+
+      nav a:hover {
+        background: #667eea;
+        color: white;
+      }
+
+      .content {
+        margin-bottom: 30px;
+      }
+
+      .content h2 {
+        color: #764ba2;
+        margin-bottom: 15px;
+      }
+
+      .features {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+        margin: 30px 0;
+      }
+
+      .feature-card {
+        background: #f8f9fa;
+        padding: 20px;
+        border-radius: 8px;
+        border-left: 4px solid #667eea;
+      }
+
+      .feature-card h3 {
+        color: #667eea;
+        margin-bottom: 10px;
+      }
+
+      .downloads {
+        background: #fff3cd;
+        padding: 20px;
+        border-radius: 8px;
+        border-left: 4px solid #ffc107;
+        margin: 20px 0;
+      }
+
+      .downloads h3 {
+        color: #856404;
+        margin-bottom: 15px;
+      }
+
+      .download-links {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .download-links a {
+        color: #667eea;
+        text-decoration: none;
+        padding: 10px;
+        background: white;
+        border-radius: 4px;
+        transition: all 0.3s ease;
+      }
+
+      .download-links a:hover {
+        background: #667eea;
+        color: white;
+        transform: translateX(5px);
+      }
+
+      footer {
+        margin-top: 40px;
+        padding-top: 20px;
+        border-top: 2px solid #e9ecef;
+        text-align: center;
+        color: #666;
+      }
+
+      .status-indicator {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        background: #28a745;
+        border-radius: 50%;
+        margin-right: 5px;
+        animation: pulse 2s infinite;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>🚀 Multi-threaded HTTP Server</h1>
+        <p class="subtitle">
+          <span class="status-indicator"></span>
+          Server is running and ready to serve requests
+        </p>
+      </header>
+
+      <nav>
+        <ul>
+          <li><a href="/">Home</a></li>
+          <li><a href="/about.html">About</a></li>
+          <li><a href="/contact.html">Contact</a></li>
+        </ul>
+      </nav>
+
+      <div class="content">
+        <h2>Welcome to the HTTP Server</h2>
+        <p>
+          This is a fully functional multi-threaded HTTP server built from
+          scratch using socket programming. It demonstrates advanced concepts in
+          network programming, concurrency, and web security.
+        </p>
+      </div>
+
+      <div class="features">
+        <div class="feature-card">
+          <h3>⚡ Multi-threaded</h3>
+          <p>
+            Handles multiple concurrent connections using a thread pool
+            architecture.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <h3>🔒 Secure</h3>
+          <p>
+            Implements path traversal protection and host header validation.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <h3>📦 Binary Transfer</h3>
+          <p>Supports serving images, documents, and other binary files.</p>
+        </div>
+
+        <div class="feature-card">
+          <h3>🔄 Keep-Alive</h3>
+          <p>Persistent connections for improved performance.</p>
+        </div>
+
+        <div class="feature-card">
+          <h3>📝 JSON Support</h3>
+          <p>POST endpoint for uploading and storing JSON data.</p>
+        </div>
+
+        <div class="feature-card">
+          <h3>📊 Comprehensive Logging</h3>
+          <p>Detailed request/response logging with timestamps.</p>
+        </div>
+      </div>
+
+      <div class="downloads">
+        <h3>📥 Test File Downloads</h3>
+        <p>Try downloading these files to test binary file transfer:</p>
+        <div class="download-links">
+          <a href="/sample.txt">📄 Download sample.txt</a>
+          <a href="/logo.png">🖼️ Download logo.png</a>
+          <a href="/logo.jpg">🖼️ Download logo.jpg</a>
+          <a href="/photo.png">📷 Download photo.png</a>
+          <a href="/photo.jpg">📷 Download photo.jpg</a>
+          <a href="/document.txt">📝 Download document.txt</a>
+        </div>
+      </div>
+
+      <footer>
+        <p>Multi-threaded HTTP Server | Socket Programming Assignment</p>
+        <p>Built with Python 3 • Supports GET and POST methods</p>
+      </footer>
+    </div>
+  </body>
+</html>
