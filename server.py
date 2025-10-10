@@ -1,412 +1,345 @@
-"""
-Multi-threaded HTTP Server with Socket Programming
-A comprehensive HTTP server implementation supporting GET/POST requests,
-binary file transfers, JSON processing, and connection management.
-"""
+# HTTP Server Assignment - Socket Programming
+# Multi-threaded server implementation
 
 import socket
 import threading
-import os
-import sys
+import os, sys
 import json
 import time
 import hashlib
 from datetime import datetime
 from urllib.parse import unquote
 from queue import Queue, Empty
-from pathlib import Path
 
 
 class ThreadPool:
-    """
-    Thread pool for handling multiple concurrent client connections.
-    Implements a fixed-size pool with a connection queue.
-    """
-    
-    def __init__(self, max_threads=10):
-        self.max_threads = max_threads
-        self.active_threads = 0
-        self.connection_queue = Queue()
+    def __init__(self, size=10):
+        self.size = size
+        self.active = 0
+        self.q = Queue()
         self.lock = threading.Lock()
-        self.shutdown_flag = threading.Event()
+        self.running = True
         
-        # Start worker threads
-        for i in range(max_threads):
-            thread = threading.Thread(target=self._worker, name=f"Thread-{i+1}", daemon=True)
-            thread.start()
+        # create worker threads
+        for i in range(size):
+            thread_name = "Thread-" + str(i+1)
+            t = threading.Thread(target=self.worker, name=thread_name, daemon=True)
+            t.start()
     
-    def _worker(self):
-        """Worker thread that processes connections from the queue."""
-        while not self.shutdown_flag.is_set():
+    def worker(self):
+        while self.running == True:
             try:
-                # Wait for a connection with timeout to allow checking shutdown flag
-                client_socket, client_address, server = self.connection_queue.get(timeout=1)
+                # get next connection from queue
+                client, addr, server = self.q.get(timeout=1)
                 
-                with self.lock:
-                    self.active_threads += 1
+                # increment active count
+                self.lock.acquire()
+                self.active = self.active + 1
+                self.lock.release()
                 
-                log(f"[{threading.current_thread().name}] Connection dequeued, now serving")
+                print_log("[%s] Connection dequeued, now serving" % threading.current_thread().name)
                 
-                # Handle the client connection
-                server.handle_client(client_socket, client_address)
+                # handle the client
+                server.handle_client(client, addr)
                 
-                with self.lock:
-                    self.active_threads -= 1
-                    
+                # decrement active count
+                self.lock.acquire()
+                self.active = self.active - 1
+                self.lock.release()
+                
             except Empty:
-                continue
-            except Exception as e:
-                log(f"[{threading.current_thread().name}] Worker error: {e}")
-                with self.lock:
-                    self.active_threads -= 1
+                # no work to do, continue
+                pass
+            except Exception as ex:
+                print_log("[%s] Worker error: %s" % (threading.current_thread().name, str(ex)))
+                # make sure to decrement count on error
+                self.lock.acquire()
+                self.active = self.active - 1
+                self.lock.release()
     
-    def submit(self, client_socket, client_address, server):
-        """Submit a new connection to the thread pool."""
-        if self.connection_queue.qsize() >= 50:
-            log(f"Warning: Connection queue full, rejecting connection from {client_address[0]}:{client_address[1]}")
-            client_socket.close()
+    def submit(self, client, addr, server):
+        # check queue size
+        qsize = self.q.qsize()
+        if qsize >= 50:
+            print_log("Warning: Connection queue full, rejecting connection from %s:%d" % (addr[0], addr[1]))
+            client.close()
             return
         
-        queue_size = self.connection_queue.qsize()
-        if queue_size > 0:
-            log(f"Warning: Thread pool saturated, queuing connection (queue size: {queue_size})")
+        if qsize > 0:
+            print_log("Warning: Thread pool saturated, queuing connection (queue size: %d)" % qsize)
         
-        self.connection_queue.put((client_socket, client_address, server))
+        # add to queue
+        self.q.put((client, addr, server))
     
-    def get_status(self):
-        """Get current thread pool status."""
-        with self.lock:
-            return self.active_threads, self.max_threads
+    def status(self):
+        self.lock.acquire()
+        active_count = self.active
+        self.lock.release()
+        return active_count, self.size
     
-    def shutdown(self):
-        """Shutdown the thread pool."""
-        self.shutdown_flag.set()
-
-
+    def stop(self):
+        self.running = False
 class HTTPServer:
-    """
-    Multi-threaded HTTP Server implementation.
-    Handles GET and POST requests with security features and connection management.
-    """
-    
-    def __init__(self, host='127.0.0.1', port=8080, max_threads=10):
+    def __init__(self, host='127.0.0.1', port=8080, threads=10):
         self.host = host
         self.port = port
-        self.max_threads = max_threads
-        self.resources_dir = 'resources'
-        self.uploads_dir = os.path.join(self.resources_dir, 'uploads')
-        self.server_socket = None
-        self.thread_pool = None
+        self.threads = threads
+        self.resources = 'resources'
+        self.uploads = self.resources + '/uploads'
+        self.socket = None
+        self.pool = None
+        self.timeout = 30
+        self.max_requests = 100
         
-        # Connection settings
-        self.keep_alive_timeout = 30
-        self.max_requests_per_connection = 100
-        
-        # Create necessary directories
-        self._setup_directories()
-    
-    def _setup_directories(self):
-        """Create resources and uploads directories if they don't exist."""
-        os.makedirs(self.resources_dir, exist_ok=True)
-        os.makedirs(self.uploads_dir, exist_ok=True)
+        # setup directories
+        try:
+            os.makedirs(self.resources)
+        except:
+            pass
+        try:
+            os.makedirs(self.uploads)
+        except:
+            pass
     
     def start(self):
-        """Start the HTTP server."""
         try:
-            # Create TCP socket
-            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            # setup socket
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind((self.host, self.port))
+            sock.listen(50)
+            self.socket = sock
             
-            # Bind and listen
-            self.server_socket.bind((self.host, self.port))
-            self.server_socket.listen(50)
+            # thread pool
+            pool = ThreadPool(size=self.threads)
+            self.pool = pool
             
-            # Initialize thread pool
-            self.thread_pool = ThreadPool(max_threads=self.max_threads)
+            print_log("HTTP Server started on http://%s:%d" % (self.host, self.port))
+            print_log("Thread pool size: %d" % self.threads)
+            print_log("Serving files from '%s' directory" % self.resources)
+            print_log("Press Ctrl+C to stop the server")
             
-            # Startup logs
-            log(f"HTTP Server started on http://{self.host}:{self.port}")
-            log(f"Thread pool size: {self.max_threads}")
-            log(f"Serving files from '{self.resources_dir}' directory")
-            log("Press Ctrl+C to stop the server")
-            
-            # Accept connections
-            while True:
+            # accept connections
+            while 1:
                 try:
-                    client_socket, client_address = self.server_socket.accept()
+                    c, a = self.socket.accept()
+                    self.pool.submit(c, a, self)
                     
-                    # Submit to thread pool
-                    self.thread_pool.submit(client_socket, client_address, self)
-                    
-                    # Log thread pool status periodically
-                    active, total = self.thread_pool.get_status()
-                    if active > total * 0.7:  # Log when >70% utilized
-                        log(f"Thread pool status: {active}/{total} active")
+                    # thread status
+                    act, tot = self.pool.status()
+                    if act > tot * 0.7:
+                        print_log("Thread pool status: %d/%d active" % (act, tot))
                         
                 except KeyboardInterrupt:
-                    log("\nShutting down server...")
+                    print_log("\nShutting down server...")
                     break
-                except Exception as e:
-                    log(f"Error accepting connection: {e}")
-            
-        except Exception as e:
-            log(f"Server error: {e}")
-        finally:
-            self.shutdown()
-    
-    def shutdown(self):
-        """Shutdown the server and cleanup resources."""
-        if self.thread_pool:
-            self.thread_pool.shutdown()
-        if self.server_socket:
-            self.server_socket.close()
-        log("Server stopped")
-    
-    def handle_client(self, client_socket, client_address):
-        """
-        Handle a client connection with keep-alive support.
-        Maintains connection for multiple requests if keep-alive is enabled.
-        """
-        thread_name = threading.current_thread().name
-        log(f"[{thread_name}] Connection from {client_address[0]}:{client_address[1]}")
+                except Exception as ex:
+                    print_log("Error accepting connection: " + str(ex))
         
-        request_count = 0
+        except Exception as ex:
+            print_log("Server error: " + str(ex))
+        finally:
+            if self.pool != None:
+                self.pool.stop()
+            if self.socket != None:
+                self.socket.close()
+            print_log("Server stopped")
+    
+    def handle_client(self, client, addr):
+        t = threading.current_thread().name
+        print_log("[%s] Connection from %s:%d" % (t, addr[0], addr[1]))
+        
+        cnt = 0
         keep_alive = True
         
         try:
-            while keep_alive and request_count < self.max_requests_per_connection:
-                # Set timeout for persistent connections
-                client_socket.settimeout(self.keep_alive_timeout)
+            while keep_alive == True and cnt < self.max_requests:
+                client.settimeout(self.timeout)
                 
                 try:
-                    # Receive request
-                    request_data = b""
-                    while True:
-                        chunk = client_socket.recv(8192)
-                        if not chunk:
+                    # read request from client
+                    req_data = b""
+                    while 1:
+                        ch = client.recv(8192)
+                        if len(ch) == 0:
                             keep_alive = False
                             break
-                        request_data += chunk
+                        req_data = req_data + ch
                         
-                        # Check for end of headers
-                        if b"\r\n\r\n" in request_data:
-                            # Check if there's a body
-                            headers_end = request_data.find(b"\r\n\r\n")
-                            headers = request_data[:headers_end].decode('utf-8', errors='ignore')
+                        # check for end of headers
+                        if b"\r\n\r\n" in req_data:
+                            p = req_data.find(b"\r\n\r\n")
+                            hdr = req_data[:p].decode('utf-8', errors='ignore')
                             
-                            # Check for Content-Length
-                            content_length = 0
-                            for line in headers.split('\r\n'):
+                            # check content length
+                            cl = 0
+                            lines = hdr.split('\r\n')
+                            for line in lines:
                                 if line.lower().startswith('content-length:'):
-                                    content_length = int(line.split(':')[1].strip())
+                                    cl = int(line.split(':')[1].strip())
+                                    break
                             
-                            # If there's a body, make sure we received it all
-                            body_received = len(request_data) - headers_end - 4
-                            if body_received >= content_length:
+                            bl = len(req_data) - p - 4
+                            if bl >= cl:
                                 break
                         
-                        # Limit request size
-                        if len(request_data) > 8192:
+                        # limit size
+                        if len(req_data) > 8192:
                             break
                     
-                    if not request_data:
+                    if len(req_data) == 0:
                         break
                     
-                    request_count += 1
+                    cnt = cnt + 1
                     
-                    # Parse and handle request
-                    request = self.parse_request(request_data)
-                    if request:
-                        response, connection_type = self.handle_request(request, thread_name)
+                    # parse request
+                    parsed = self.parse(req_data)
+                    if parsed != None:
+                        resp, ctype = self.handle(parsed, t)
+                        client.sendall(resp)
                         
-                        # Send response
-                        client_socket.sendall(response)
-                        
-                        # Check if we should keep the connection alive
-                        if connection_type == 'close' or request.get('version', 'HTTP/1.0') == 'HTTP/1.0':
+                        ver = parsed.get('version', 'HTTP/1.0')
+                        if ctype == 'close' or ver == 'HTTP/1.0':
                             keep_alive = False
                         
-                        log(f"[{thread_name}] Connection: {connection_type}")
+                        print_log("[%s] Connection: %s" % (t, ctype))
                     else:
-                        # Invalid request
-                        response = self.build_error_response(400, "Bad Request")
-                        client_socket.sendall(response)
+                        e = self.error(400, "Bad Request")
+                        client.sendall(e)
                         keep_alive = False
                 
                 except socket.timeout:
-                    log(f"[{thread_name}] Connection timeout")
+                    print_log("[%s] Connection timeout" % t)
                     keep_alive = False
-                except Exception as e:
-                    log(f"[{thread_name}] Error handling request: {e}")
+                except Exception as ex:
+                    print_log("[%s] Error handling request: %s" % (t, str(ex)))
                     keep_alive = False
         
         finally:
-            client_socket.close()
-            log(f"[{thread_name}] Connection closed ({request_count} requests served)")
+            client.close()
+            print_log("[%s] Connection closed (%d requests served)" % (t, cnt))
     
-    def parse_request(self, request_data):
-        """
-        Parse HTTP request and extract method, path, version, headers, and body.
-        Returns a dictionary with request components or None if invalid.
-        """
+    def parse(self, data):
         try:
-            # Split headers and body
-            if b"\r\n\r\n" in request_data:
-                headers_part, body_part = request_data.split(b"\r\n\r\n", 1)
+            if b"\r\n\r\n" in data:
+                h, b = data.split(b"\r\n\r\n", 1)
             else:
-                headers_part = request_data
-                body_part = b""
+                h = data
+                b = b""
             
-            # Decode headers
-            headers_text = headers_part.decode('utf-8', errors='ignore')
-            lines = headers_text.split('\r\n')
+            ht = h.decode('utf-8', errors='ignore')
+            lines = ht.split('\r\n')
             
             if not lines:
                 return None
             
-            # Parse request line
-            request_line = lines[0].split()
-            if len(request_line) != 3:
+            p = lines[0].split()
+            if len(p) != 3:
                 return None
             
-            method, path, version = request_line
+            m, path, v = p
             
-            # Parse headers into dictionary
             headers = {}
-            for line in lines[1:]:
-                if ':' in line:
-                    key, value = line.split(':', 1)
-                    headers[key.strip().lower()] = value.strip()
+            for l in lines[1:]:
+                if ':' in l:
+                    k, val = l.split(':', 1)
+                    headers[k.strip().lower()] = val.strip()
             
-            return {
-                'method': method.upper(),
-                'path': path,
-                'version': version,
-                'headers': headers,
-                'body': body_part
-            }
+            return {'method': m.upper(), 'path': path, 'version': v, 'headers': headers, 'body': b}
         
         except Exception as e:
-            log(f"Error parsing request: {e}")
+            print_log("Error parsing request: " + str(e))
             return None
     
-    def handle_request(self, request, thread_name):
-        """
-        Route and handle HTTP requests based on method.
-        Returns (response_bytes, connection_type).
-        """
-        method = request['method']
-        path = request['path']
-        version = request['version']
-        headers = request['headers']
+    def handle(self, req, tname):
+        m = req['method']
+        p = req['path']
+        v = req['version']
+        h = req['headers']
         
-        log(f"[{thread_name}] Request: {method} {path} {version}")
+        print_log("[%s] Request: %s %s %s" % (tname, m, p, v))
         
-        # Validate Host header
-        host_header = headers.get('host', '')
-        if not host_header:
-            log(f"[{thread_name}] Security violation: Missing Host header")
-            return self.build_error_response(400, "Bad Request", "Missing Host header"), 'close'
+        # check host header
+        host = h.get('host', '')
+        if not host:
+            print_log("[%s] Security violation: Missing Host header" % tname)
+            return self.error(400, "Bad Request", "Missing Host header"), 'close'
         
-        # Validate Host matches server address
-        valid_hosts = [
-            f"{self.host}:{self.port}",
-            f"localhost:{self.port}",
-            f"127.0.0.1:{self.port}",
-            self.host,
-            "localhost",
-            "127.0.0.1"
-        ]
-        if host_header not in valid_hosts:
-            log(f"[{thread_name}] Security violation: Host mismatch ({host_header})")
-            return self.build_error_response(403, "Forbidden", "Host header mismatch"), 'close'
+        # validate host
+        valid = [self.host + ":" + str(self.port), "localhost:" + str(self.port), 
+                 "127.0.0.1:" + str(self.port), self.host, "localhost", "127.0.0.1"]
+        if host not in valid:
+            print_log("[%s] Security violation: Host mismatch (%s)" % (tname, host))
+            return self.error(403, "Forbidden", "Host header mismatch"), 'close'
         
-        log(f"[{thread_name}] Host validation: {host_header} ✓")
+        print_log("[%s] Host validation: %s ✓" % (tname, host))
         
-        # Validate path for security
-        if not self.validate_path(path):
-            log(f"[{thread_name}] Security violation: Path traversal attempt ({path})")
-            return self.build_error_response(403, "Forbidden", "Unauthorized path access"), 'close'
+        # path validation
+        if not self.safe_path(p):
+            print_log("[%s] Security violation: Path traversal attempt (%s)" % (tname, p))
+            return self.error(403, "Forbidden", "Unauthorized path access"), 'close'
         
-        # Determine connection type
-        connection_header = headers.get('connection', '').lower()
-        if connection_header == 'close':
-            connection_type = 'close'
-        elif connection_header == 'keep-alive':
-            connection_type = 'keep-alive'
+        # connection type
+        c = h.get('connection', '').lower()
+        if c == 'close':
+            conn = 'close'
+        elif c == 'keep-alive':
+            conn = 'keep-alive'
         else:
-            # Default behavior
-            connection_type = 'keep-alive' if version == 'HTTP/1.1' else 'close'
+            conn = 'keep-alive' if v == 'HTTP/1.1' else 'close'
         
-        # Route based on method
-        if method == 'GET':
-            response = self.handle_get(path, thread_name, connection_type)
-        elif method == 'POST':
-            response = self.handle_post(request, thread_name, connection_type)
+        # route
+        if m == 'GET':
+            r = self.get(p, tname, conn)
+        elif m == 'POST':
+            r = self.post(req, tname, conn)
         else:
-            # Method not allowed
-            response = self.build_error_response(405, "Method Not Allowed", 
-                                                "Only GET and POST methods are supported",
-                                                connection_type)
+            r = self.error(405, "Method Not Allowed", "Only GET and POST methods are supported", conn)
         
-        return response, connection_type
+        return r, conn
     
-    def validate_path(self, path):
-        """
-        Validate request path to prevent directory traversal attacks.
-        Returns True if path is safe, False otherwise.
-        """
-        # Decode URL encoding
-        decoded_path = unquote(path)
+    def safe_path(self, p):
+        clean = unquote(p)
         
-        # Check for suspicious patterns
-        dangerous_patterns = ['..', './', '\\', '//', '\\\\']
-        for pattern in dangerous_patterns:
-            if pattern in decoded_path:
+        bad = ['..', './', '\\', '//', '\\\\']
+        for b in bad:
+            if b in clean:
                 return False
         
-        # Check for absolute paths
-        if decoded_path.startswith('/') and len(decoded_path) > 1:
-            # Remove leading slash for further validation
-            test_path = decoded_path[1:]
+        if clean.startswith('/') and len(clean) > 1:
+            t = clean[1:]
         else:
-            test_path = decoded_path
+            t = clean
         
-        # Ensure path doesn't escape resources directory
         try:
-            # Construct full path
-            if decoded_path == '/' or decoded_path == '':
+            if clean == '/' or clean == '':
                 return True
             
-            full_path = os.path.join(self.resources_dir, test_path.lstrip('/'))
-            canonical_path = os.path.abspath(full_path)
-            resources_path = os.path.abspath(self.resources_dir)
+            fp = os.path.join(self.resources, t.lstrip('/'))
+            rp = os.path.abspath(fp)
+            bp = os.path.abspath(self.resources)
             
-            # Ensure the canonical path starts with resources directory
-            return canonical_path.startswith(resources_path)
+            return rp.startswith(bp)
         except:
             return False
     
-    def handle_get(self, path, thread_name, connection_type):
-        """Handle GET requests for serving files."""
-        # Handle root path
+    def get(self, path, t, conn):
+        # default to index
         if path == '/' or path == '':
             path = '/index.html'
         
-        # Remove leading slash and construct file path
-        file_path = os.path.join(self.resources_dir, path.lstrip('/'))
+        # build file path
+        filepath = self.resources + '/' + path.lstrip('/')
         
-        # Check if file exists
-        if not os.path.exists(file_path) or not os.path.isfile(file_path):
-            return self.build_error_response(404, "Not Found", 
-                                            f"The requested resource {path} was not found",
-                                            connection_type)
+        # check if file exists
+        if os.path.exists(filepath) == False or os.path.isfile(filepath) == False:
+            return self.error(404, "Not Found", "The requested resource %s was not found" % path, conn)
         
-        # Get file extension
-        _, ext = os.path.splitext(file_path)
-        ext = ext.lower()
+        # get file extension
+        parts = os.path.splitext(filepath)
+        ext = parts[1].lower()
         
-        # Determine content type and transfer mode
+        # determine content type
         if ext == '.html':
             content_type = 'text/html; charset=utf-8'
             is_binary = False
@@ -414,222 +347,181 @@ class HTTPServer:
             content_type = 'application/octet-stream'
             is_binary = True
         else:
-            return self.build_error_response(415, "Unsupported Media Type",
-                                            f"File type {ext} is not supported",
-                                            connection_type)
+            return self.error(415, "Unsupported Media Type", "File type %s is not supported" % ext, conn)
         
-        # Read file
         try:
-            if is_binary:
-                with open(file_path, 'rb') as f:
-                    file_content = f.read()
+            if is_binary == True:
+                # read binary file
+                f = open(filepath, 'rb')
+                data = f.read()
+                f.close()
                 
-                file_size = len(file_content)
-                filename = os.path.basename(file_path)
+                size = len(data)
+                filename = os.path.basename(filepath)
                 
-                log(f"[{thread_name}] Sending binary file: {filename} ({file_size} bytes)")
+                print_log("[%s] Sending binary file: %s (%d bytes)" % (t, filename, size))
                 
-                # Build response with binary content
-                response = self.build_binary_response(file_content, filename, connection_type)
-                log(f"[{thread_name}] Response: 200 OK ({file_size} bytes transferred)")
+                resp = self.binary(data, filename, conn)
+                print_log("[%s] Response: 200 OK (%d bytes transferred)" % (t, size))
                 
-                return response
+                return resp
             else:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    file_content = f.read()
+                # read text file
+                f = open(filepath, 'r', encoding='utf-8')
+                content = f.read()
+                f.close()
                 
-                file_size = len(file_content.encode('utf-8'))
+                size = len(content.encode('utf-8'))
                 
-                log(f"[{thread_name}] Sending HTML file: {os.path.basename(file_path)} ({file_size} bytes)")
+                print_log("[%s] Sending HTML file: %s (%d bytes)" % (t, os.path.basename(filepath), size))
                 
-                # Build HTML response
-                response = self.build_response(200, "OK", file_content, content_type, connection_type)
-                log(f"[{thread_name}] Response: 200 OK ({file_size} bytes transferred)")
+                resp = self.response(200, "OK", content, content_type, conn)
+                print_log("[%s] Response: 200 OK (%d bytes transferred)" % (t, size))
                 
-                return response
+                return resp
         
-        except Exception as e:
-            log(f"[{thread_name}] Error reading file: {e}")
-            return self.build_error_response(500, "Internal Server Error",
-                                            "Error reading file",
-                                            connection_type)
+        except Exception as ex:
+            print_log("[%s] Error reading file: %s" % (t, str(ex)))
+            return self.error(500, "Internal Server Error", "Error reading file", conn)
     
-    def handle_post(self, request, thread_name, connection_type):
-        """Handle POST requests for JSON file uploads."""
-        headers = request['headers']
-        body = request['body']
+    def post(self, req, tname, conn):
+        h = req['headers']
+        b = req['body']
         
-        # Check Content-Type
-        content_type = headers.get('content-type', '')
-        if 'application/json' not in content_type:
-            log(f"[{thread_name}] Invalid Content-Type for POST: {content_type}")
-            return self.build_error_response(415, "Unsupported Media Type",
-                                            "Only application/json is supported for POST requests",
-                                            connection_type)
+        ct = h.get('content-type', '')
+        if 'application/json' not in ct:
+            print_log("[%s] Invalid Content-Type for POST: %s" % (tname, ct))
+            return self.error(415, "Unsupported Media Type", 
+                            "Only application/json is supported for POST requests", conn)
         
-        # Parse JSON
         try:
-            json_data = json.loads(body.decode('utf-8'))
+            d = json.loads(b.decode('utf-8'))
         except json.JSONDecodeError as e:
-            log(f"[{thread_name}] Invalid JSON: {e}")
-            return self.build_error_response(400, "Bad Request",
-                                            "Invalid JSON data",
-                                            connection_type)
+            print_log("[%s] Invalid JSON: %s" % (tname, str(e)))
+            return self.error(400, "Bad Request", "Invalid JSON data", conn)
         
-        # Generate filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        random_id = hashlib.md5(str(time.time()).encode()).hexdigest()[:4]
-        filename = f"upload_{timestamp}_{random_id}.json"
-        filepath = os.path.join(self.uploads_dir, filename)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        rid = hashlib.md5(str(time.time()).encode()).hexdigest()[:4]
+        fn = "upload_%s_%s.json" % (ts, rid)
+        fp = os.path.join(self.uploads, fn)
         
-        # Save JSON to file
         try:
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(json_data, f, indent=2)
+            f = open(fp, 'w', encoding='utf-8')
+            json.dump(d, f, indent=2)
+            f.close()
             
-            # Build success response
-            response_data = {
-                "status": "success",
-                "message": "File created successfully",
-                "filepath": f"/uploads/{filename}"
-            }
+            rd = {"status": "success", "message": "File created successfully", 
+                  "filepath": "/uploads/" + fn}
             
-            log(f"[{thread_name}] JSON file created: {filename}")
-            log(f"[{thread_name}] Response: 201 Created")
+            print_log("[%s] JSON file created: %s" % (tname, fn))
+            print_log("[%s] Response: 201 Created" % tname)
             
-            response_json = json.dumps(response_data, indent=2)
-            return self.build_response(201, "Created", response_json, 
-                                      'application/json', connection_type)
+            rj = json.dumps(rd, indent=2)
+            return self.response(201, "Created", rj, 'application/json', conn)
         
         except Exception as e:
-            log(f"[{thread_name}] Error saving file: {e}")
-            return self.build_error_response(500, "Internal Server Error",
-                                            "Error saving file",
-                                            connection_type)
+            print_log("[%s] Error saving file: %s" % (tname, str(e)))
+            return self.error(500, "Internal Server Error", "Error saving file", conn)
     
-    def build_response(self, status_code, status_text, body, content_type, connection_type='close'):
-        """Build HTTP response with text body."""
-        body_bytes = body.encode('utf-8') if isinstance(body, str) else body
+    def response(self, code, msg, body, ct, conn='close'):
+        bd = body.encode('utf-8') if isinstance(body, str) else body
         
-        response_lines = [
-            f"HTTP/1.1 {status_code} {status_text}",
-            f"Content-Type: {content_type}",
-            f"Content-Length: {len(body_bytes)}",
-            f"Date: {get_http_date()}",
-            "Server: Multi-threaded HTTP Server",
-            f"Connection: {connection_type}"
-        ]
+        l = ["HTTP/1.1 %d %s" % (code, msg), "Content-Type: %s" % ct, 
+             "Content-Length: %d" % len(bd), "Date: %s" % http_date(),
+             "Server: Multi-threaded HTTP Server", "Connection: %s" % conn]
         
-        if connection_type == 'keep-alive':
-            response_lines.append(f"Keep-Alive: timeout={self.keep_alive_timeout}, max={self.max_requests_per_connection}")
+        if conn == 'keep-alive':
+            l.append("Keep-Alive: timeout=%d, max=%d" % (self.timeout, self.max_requests))
         
-        response_lines.append("")
-        response_lines.append("")
+        l.append("")
+        l.append("")
         
-        response_header = "\r\n".join(response_lines).encode('utf-8')
-        return response_header + body_bytes
+        h = "\r\n".join(l).encode('utf-8')
+        return h + bd
     
-    def build_binary_response(self, binary_data, filename, connection_type='close'):
-        """Build HTTP response for binary file transfer."""
-        response_lines = [
-            "HTTP/1.1 200 OK",
-            "Content-Type: application/octet-stream",
-            f"Content-Length: {len(binary_data)}",
-            f'Content-Disposition: attachment; filename="{filename}"',
-            f"Date: {get_http_date()}",
-            "Server: Multi-threaded HTTP Server",
-            f"Connection: {connection_type}"
-        ]
+    def binary(self, d, fn, conn='close'):
+        l = ["HTTP/1.1 200 OK", "Content-Type: application/octet-stream",
+             "Content-Length: %d" % len(d), 'Content-Disposition: attachment; filename="%s"' % fn,
+             "Date: %s" % http_date(), "Server: Multi-threaded HTTP Server",
+             "Connection: %s" % conn]
         
-        if connection_type == 'keep-alive':
-            response_lines.append(f"Keep-Alive: timeout={self.keep_alive_timeout}, max={self.max_requests_per_connection}")
+        if conn == 'keep-alive':
+            l.append("Keep-Alive: timeout=%d, max=%d" % (self.timeout, self.max_requests))
         
-        response_lines.append("")
-        response_lines.append("")
+        l.append("")
+        l.append("")
         
-        response_header = "\r\n".join(response_lines).encode('utf-8')
-        return response_header + binary_data
+        h = "\r\n".join(l).encode('utf-8')
+        return h + d
     
-    def build_error_response(self, status_code, status_text, message="", connection_type='close'):
-        """Build HTTP error response."""
-        body = f"""<!DOCTYPE html>
+    def error(self, code, msg, det="", conn='close'):
+        b = """<!DOCTYPE html>
 <html>
 <head>
-    <title>{status_code} {status_text}</title>
+    <title>%d %s</title>
     <style>
-        body {{ font-family: Arial, sans-serif; margin: 50px; }}
-        h1 {{ color: #d32f2f; }}
-        p {{ color: #666; }}
+        body { font-family: Arial, sans-serif; margin: 50px; }
+        h1 { color: #d32f2f; }
+        p { color: #666; }
     </style>
 </head>
 <body>
-    <h1>{status_code} {status_text}</h1>
-    <p>{message}</p>
+    <h1>%d %s</h1>
+    <p>%s</p>
     <hr>
     <p><em>Multi-threaded HTTP Server</em></p>
 </body>
-</html>"""
+</html>""" % (code, msg, code, msg, det)
         
-        response_lines = [
-            f"HTTP/1.1 {status_code} {status_text}",
-            "Content-Type: text/html; charset=utf-8",
-            f"Content-Length: {len(body.encode('utf-8'))}",
-            f"Date: {get_http_date()}",
-            "Server: Multi-threaded HTTP Server",
-            f"Connection: {connection_type}"
-        ]
+        l = ["HTTP/1.1 %d %s" % (code, msg), "Content-Type: text/html; charset=utf-8",
+             "Content-Length: %d" % len(b.encode('utf-8')), "Date: %s" % http_date(),
+             "Server: Multi-threaded HTTP Server", "Connection: %s" % conn]
         
-        if status_code == 503:
-            response_lines.append("Retry-After: 30")
+        if code == 503:
+            l.append("Retry-After: 30")
         
-        response_lines.append("")
-        response_lines.append("")
+        l.append("")
+        l.append("")
         
-        response_header = "\r\n".join(response_lines)
-        return (response_header + body).encode('utf-8')
+        h = "\r\n".join(l)
+        return (h + b).encode('utf-8')
 
 
-def log(message):
-    """Log message with timestamp."""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] {message}")
+def print_log(m):
+    t = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print("[%s] %s" % (t, m))
 
 
-def get_http_date():
-    """Get current date in RFC 7231 format."""
+def http_date():
     from email.utils import formatdate
     return formatdate(timeval=None, localtime=False, usegmt=True)
 
 
 def main():
-    """Main entry point for the HTTP server."""
-    # Parse command-line arguments
-    host = '127.0.0.1'
-    port = 8080
-    max_threads = 10
+    h = '127.0.0.1'
+    p = 8080
+    t = 10
     
     if len(sys.argv) > 1:
         try:
-            port = int(sys.argv[1])
+            p = int(sys.argv[1])
         except ValueError:
             print("Error: Port must be a number")
             sys.exit(1)
     
     if len(sys.argv) > 2:
-        host = sys.argv[2]
+        h = sys.argv[2]
     
     if len(sys.argv) > 3:
         try:
-            max_threads = int(sys.argv[3])
+            t = int(sys.argv[3])
         except ValueError:
             print("Error: Max threads must be a number")
             sys.exit(1)
     
-    # Create and start server
-    server = HTTPServer(host=host, port=port, max_threads=max_threads)
-    server.start()
+    s = HTTPServer(host=h, port=p, threads=t)
+    s.start()
 
 
 if __name__ == "__main__":
     main()
-
